@@ -29,6 +29,48 @@ class ExtensionService {
   static Map<dynamic, dynamic> evalMap = {};
   String className = '';
   bool isinit = false;
+
+  /// Helper method to parse JSON arguments if needed
+  dynamic _parseJsonArgs(dynamic args, String functionName) {
+    if (args is String) {
+      try {
+        return jsonDecode(args);
+      } catch (e) {
+        logger.severe('Failed to parse args in $functionName: $e');
+        return null;
+      }
+    }
+    return args;
+  }
+
+  /// Helper method to validate list arguments
+  bool _validateListArgs(dynamic args, int minLength, String functionName) {
+    if (args is! List) {
+      logger.severe('Invalid args in $functionName: expected List, got ${args.runtimeType}');
+      return false;
+    }
+    if (args.length < minLength) {
+      logger.severe('Invalid args in $functionName: expected List with at least $minLength elements, got ${args.length}');
+      return false;
+    }
+    return true;
+  }
+
+  /// Helper method to validate map arguments with required keys
+  bool _validateMapArgs(dynamic args, List<String> requiredKeys, String functionName) {
+    if (args is! Map) {
+      logger.severe('Invalid args in $functionName: expected Map, got ${args.runtimeType}');
+      return false;
+    }
+    for (final key in requiredKeys) {
+      if (!args.containsKey(key)) {
+        logger.severe('Invalid args in $functionName: missing required key "$key"');
+        return false;
+      }
+    }
+    return true;
+  }
+
   initRuntime(Extension ext) async {
     extension = ext;
     className = extension.package.replaceAll('.', '');
@@ -57,28 +99,51 @@ class ExtensionService {
     runtime.enableHandlePromises();
 
     jsLog(dynamic args) {
-      logger.info(args[0]);
+      final parsedArgs = _parseJsonArgs(args, 'jsLog');
+      if (parsedArgs == null) {
+        // If parsing failed but args is a String, log it directly
+        if (args is String) {
+          logger.info(args);
+          ExtensionUtils.addLog(
+            extension,
+            ExtensionLogLevel.info,
+            args,
+          );
+        }
+        return;
+      }
+      
+      if (!_validateListArgs(parsedArgs, 1, 'jsLog')) {
+        return;
+      }
+
+      logger.info(parsedArgs[0]);
       ExtensionUtils.addLog(
         extension,
         ExtensionLogLevel.info,
-        args[0],
+        parsedArgs[0],
       );
     }
 
     jsRequest(dynamic args) async {
-      _cuurentRequestUrl = args[0];
-      final headers = args[1]['headers'] ?? {};
+      final parsedArgs = _parseJsonArgs(args, 'jsRequest');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 2, 'jsRequest')) {
+        throw Exception('Invalid arguments for request');
+      }
+
+      _cuurentRequestUrl = parsedArgs[0];
+      final headers = parsedArgs[1]['headers'] ?? {};
       if (headers['User-Agent'] == null) {
         headers['User-Agent'] = MiruStorage.getUASetting();
       }
 
-      final url = args[0];
-      final method = args[1]['method'] ?? 'get';
-      final requestBody = args[1]['data'];
+      final url = parsedArgs[0];
+      final method = parsedArgs[1]['method'] ?? 'get';
+      final requestBody = parsedArgs[1]['data'];
 
       final log = ExtensionNetworkLog(
         extension: extension,
-        url: args[0],
+        url: parsedArgs[0],
         method: method,
         requestHeaders: headers,
       );
@@ -92,7 +157,7 @@ class ExtensionService {
         final res = await dio.request<String>(
           url,
           data: requestBody,
-          queryParameters: args[1]['queryParameters'] ?? {},
+          queryParameters: parsedArgs[1]['queryParameters'] ?? {},
           options: Options(
             headers: headers,
             method: method,
@@ -133,37 +198,57 @@ class ExtensionService {
     }
 
     jsRegisterSetting(dynamic args) async {
-      args[0]['package'] = extension.package;
+      final parsedArgs = _parseJsonArgs(args, 'jsRegisterSetting');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsRegisterSetting')) {
+        throw Exception('Invalid arguments for registerSetting');
+      }
+
+      parsedArgs[0]['package'] = extension.package;
 
       return DatabaseService.registerExtensionSetting(
         ExtensionSetting()
           ..package = extension.package
-          ..title = args[0]['title']
-          ..key = args[0]['key']
-          ..value = args[0]['value']
-          ..type = ExtensionSetting.stringToType(args[0]['type'])
-          ..description = args[0]['description']
-          ..defaultValue = args[0]['defaultValue']
-          ..options = jsonEncode(args[0]['options']),
+          ..title = parsedArgs[0]['title']
+          ..key = parsedArgs[0]['key']
+          ..value = parsedArgs[0]['value']
+          ..type = ExtensionSetting.stringToType(parsedArgs[0]['type'])
+          ..description = parsedArgs[0]['description']
+          ..defaultValue = parsedArgs[0]['defaultValue']
+          ..options = jsonEncode(parsedArgs[0]['options']),
       );
     }
 
     jsGetMessage(dynamic args) async {
+      final parsedArgs = _parseJsonArgs(args, 'jsGetMessage');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsGetMessage')) {
+        return null;
+      }
+
       final setting =
-          await DatabaseService.getExtensionSetting(extension.package, args[0]);
+          await DatabaseService.getExtensionSetting(extension.package, parsedArgs[0]);
       return setting!.value ?? setting.defaultValue;
     }
 
     jsCleanSettings(dynamic args) async {
-      // debugPrint('cleanSettings: ${args[0]}');
+      final parsedArgs = _parseJsonArgs(args, 'jsCleanSettings');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsCleanSettings')) {
+        return;
+      }
+
+      // debugPrint('cleanSettings: ${parsedArgs[0]}');
       return DatabaseService.cleanExtensionSettings(
-          extension.package, List<String>.from(args[0]));
+          extension.package, List<String>.from(parsedArgs[0]));
     }
 
     jsQuerySelector(dynamic args) {
-      final content = args[0];
-      final selector = args[1];
-      final fun = args[2];
+      final parsedArgs = _parseJsonArgs(args, 'jsQuerySelector');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsQuerySelector')) {
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final fun = parsedArgs[2];
 
       final doc = parse(content).querySelector(selector);
       String result = '';
@@ -181,9 +266,14 @@ class ExtensionService {
     }
 
     jsQueryXPath(args) {
-      final content = args[0];
-      final selector = args[1];
-      final fun = args[2];
+      final parsedArgs = _parseJsonArgs(args, 'jsQueryXPath');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsQueryXPath')) {
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final fun = parsedArgs[2];
 
       final xpath = HtmlXPath.html(content);
       final result = xpath.queryXPath(selector);
@@ -209,8 +299,13 @@ class ExtensionService {
     }
 
     jsRemoveSelector(dynamic args) {
-      final content = args[0];
-      final selector = args[1];
+      final parsedArgs = _parseJsonArgs(args, 'jsRemoveSelector');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 2, 'jsRemoveSelector')) {
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
       final doc = parse(content);
       doc.querySelectorAll(selector).forEach((element) {
         element.remove();
@@ -219,16 +314,26 @@ class ExtensionService {
     }
 
     jsGetAttributeText(args) {
-      final content = args[0];
-      final selector = args[1];
-      final attr = args[2];
+      final parsedArgs = _parseJsonArgs(args, 'jsGetAttributeText');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsGetAttributeText')) {
+        return null;
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final attr = parsedArgs[2];
       final doc = parse(content).querySelector(selector);
       return doc?.attributes[attr];
     }
 
     jsQuerySelectorAll(dynamic args) async {
-      final content = args["content"];
-      final selector = args["selector"];
+      final parsedArgs = _parseJsonArgs(args, 'jsQuerySelectorAll');
+      if (parsedArgs == null || !_validateMapArgs(parsedArgs, ['content', 'selector'], 'jsQuerySelectorAll')) {
+        return jsonEncode([]);
+      }
+
+      final content = parsedArgs["content"];
+      final selector = parsedArgs["selector"];
       final doc = parse(content).querySelectorAll(selector);
       final elements = jsonEncode(doc.map((e) {
         return e.outerHtml;
