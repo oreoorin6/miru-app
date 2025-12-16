@@ -57,28 +57,66 @@ class ExtensionService {
     runtime.enableHandlePromises();
 
     jsLog(dynamic args) {
-      logger.info(args[0]);
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          // If it's not valid JSON, just log the string itself
+          logger.info(args);
+          ExtensionUtils.addLog(
+            extension,
+            ExtensionLogLevel.info,
+            args,
+          );
+          return;
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.isEmpty) {
+        logger.warning('Invalid args in jsLog: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+        return;
+      }
+
+      logger.info(parsedArgs[0]);
       ExtensionUtils.addLog(
         extension,
         ExtensionLogLevel.info,
-        args[0],
+        parsedArgs[0],
       );
     }
 
     jsRequest(dynamic args) async {
-      _cuurentRequestUrl = args[0];
-      final headers = args[1]['headers'] ?? {};
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsRequest: $e');
+          throw Exception('Invalid arguments for request');
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.length < 2) {
+        logger.severe('Invalid args in jsRequest: expected List with at least 2 elements, got ${parsedArgs.runtimeType}');
+        throw Exception('Invalid arguments for request');
+      }
+
+      _cuurentRequestUrl = parsedArgs[0];
+      final headers = parsedArgs[1]['headers'] ?? {};
       if (headers['User-Agent'] == null) {
         headers['User-Agent'] = MiruStorage.getUASetting();
       }
 
-      final url = args[0];
-      final method = args[1]['method'] ?? 'get';
-      final requestBody = args[1]['data'];
+      final url = parsedArgs[0];
+      final method = parsedArgs[1]['method'] ?? 'get';
+      final requestBody = parsedArgs[1]['data'];
 
       final log = ExtensionNetworkLog(
         extension: extension,
-        url: args[0],
+        url: parsedArgs[0],
         method: method,
         requestHeaders: headers,
       );
@@ -92,7 +130,7 @@ class ExtensionService {
         final res = await dio.request<String>(
           url,
           data: requestBody,
-          queryParameters: args[1]['queryParameters'] ?? {},
+          queryParameters: parsedArgs[1]['queryParameters'] ?? {},
           options: Options(
             headers: headers,
             method: method,
@@ -133,37 +171,101 @@ class ExtensionService {
     }
 
     jsRegisterSetting(dynamic args) async {
-      args[0]['package'] = extension.package;
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsRegisterSetting: $e');
+          throw Exception('Invalid arguments for registerSetting');
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.isEmpty) {
+        logger.severe('Invalid args in jsRegisterSetting: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+        throw Exception('Invalid arguments for registerSetting');
+      }
+
+      parsedArgs[0]['package'] = extension.package;
 
       return DatabaseService.registerExtensionSetting(
         ExtensionSetting()
           ..package = extension.package
-          ..title = args[0]['title']
-          ..key = args[0]['key']
-          ..value = args[0]['value']
-          ..type = ExtensionSetting.stringToType(args[0]['type'])
-          ..description = args[0]['description']
-          ..defaultValue = args[0]['defaultValue']
-          ..options = jsonEncode(args[0]['options']),
+          ..title = parsedArgs[0]['title']
+          ..key = parsedArgs[0]['key']
+          ..value = parsedArgs[0]['value']
+          ..type = ExtensionSetting.stringToType(parsedArgs[0]['type'])
+          ..description = parsedArgs[0]['description']
+          ..defaultValue = parsedArgs[0]['defaultValue']
+          ..options = jsonEncode(parsedArgs[0]['options']),
       );
     }
 
     jsGetMessage(dynamic args) async {
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsGetMessage: $e');
+          return null;
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.isEmpty) {
+        logger.severe('Invalid args in jsGetMessage: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+        return null;
+      }
+
       final setting =
-          await DatabaseService.getExtensionSetting(extension.package, args[0]);
+          await DatabaseService.getExtensionSetting(extension.package, parsedArgs[0]);
       return setting!.value ?? setting.defaultValue;
     }
 
     jsCleanSettings(dynamic args) async {
-      // debugPrint('cleanSettings: ${args[0]}');
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsCleanSettings: $e');
+          return;
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.isEmpty) {
+        logger.severe('Invalid args in jsCleanSettings: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+        return;
+      }
+
+      // debugPrint('cleanSettings: ${parsedArgs[0]}');
       return DatabaseService.cleanExtensionSettings(
-          extension.package, List<String>.from(args[0]));
+          extension.package, List<String>.from(parsedArgs[0]));
     }
 
     jsQuerySelector(dynamic args) {
-      final content = args[0];
-      final selector = args[1];
-      final fun = args[2];
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsQuerySelector: $e');
+          return '';
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.length < 3) {
+        logger.severe('Invalid args in jsQuerySelector: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final fun = parsedArgs[2];
 
       final doc = parse(content).querySelector(selector);
       String result = '';
@@ -181,9 +283,25 @@ class ExtensionService {
     }
 
     jsQueryXPath(args) {
-      final content = args[0];
-      final selector = args[1];
-      final fun = args[2];
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsQueryXPath: $e');
+          return '';
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.length < 3) {
+        logger.severe('Invalid args in jsQueryXPath: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final fun = parsedArgs[2];
 
       final xpath = HtmlXPath.html(content);
       final result = xpath.queryXPath(selector);
@@ -209,8 +327,24 @@ class ExtensionService {
     }
 
     jsRemoveSelector(dynamic args) {
-      final content = args[0];
-      final selector = args[1];
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsRemoveSelector: $e');
+          return '';
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.length < 2) {
+        logger.severe('Invalid args in jsRemoveSelector: expected List with 2 elements, got ${parsedArgs.runtimeType}');
+        return '';
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
       final doc = parse(content);
       doc.querySelectorAll(selector).forEach((element) {
         element.remove();
@@ -219,16 +353,48 @@ class ExtensionService {
     }
 
     jsGetAttributeText(args) {
-      final content = args[0];
-      final selector = args[1];
-      final attr = args[2];
+      // Handle both List and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsGetAttributeText: $e');
+          return null;
+        }
+      }
+      
+      if (parsedArgs is! List || parsedArgs.length < 3) {
+        logger.severe('Invalid args in jsGetAttributeText: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+        return null;
+      }
+
+      final content = parsedArgs[0];
+      final selector = parsedArgs[1];
+      final attr = parsedArgs[2];
       final doc = parse(content).querySelector(selector);
       return doc?.attributes[attr];
     }
 
     jsQuerySelectorAll(dynamic args) async {
-      final content = args["content"];
-      final selector = args["selector"];
+      // Handle both Map and String (JSON) inputs
+      dynamic parsedArgs = args;
+      if (args is String) {
+        try {
+          parsedArgs = jsonDecode(args);
+        } catch (e) {
+          logger.severe('Failed to parse args in jsQuerySelectorAll: $e');
+          return jsonEncode([]);
+        }
+      }
+      
+      if (parsedArgs is! Map || !parsedArgs.containsKey("content") || !parsedArgs.containsKey("selector")) {
+        logger.severe('Invalid args in jsQuerySelectorAll: expected Map with "content" and "selector" keys, got ${parsedArgs.runtimeType}');
+        return jsonEncode([]);
+      }
+
+      final content = parsedArgs["content"];
+      final selector = parsedArgs["selector"];
       final doc = parse(content).querySelectorAll(selector);
       final elements = jsonEncode(doc.map((e) {
         return e.outerHtml;
