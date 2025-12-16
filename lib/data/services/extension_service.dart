@@ -29,6 +29,48 @@ class ExtensionService {
   static Map<dynamic, dynamic> evalMap = {};
   String className = '';
   bool isinit = false;
+
+  /// Helper method to parse JSON arguments if needed
+  dynamic _parseJsonArgs(dynamic args, String functionName) {
+    if (args is String) {
+      try {
+        return jsonDecode(args);
+      } catch (e) {
+        logger.severe('Failed to parse args in $functionName: $e');
+        return null;
+      }
+    }
+    return args;
+  }
+
+  /// Helper method to validate list arguments
+  bool _validateListArgs(dynamic args, int minLength, String functionName) {
+    if (args is! List) {
+      logger.severe('Invalid args in $functionName: expected List, got ${args.runtimeType}');
+      return false;
+    }
+    if (args.length < minLength) {
+      logger.severe('Invalid args in $functionName: expected List with at least $minLength elements, got ${args.length}');
+      return false;
+    }
+    return true;
+  }
+
+  /// Helper method to validate map arguments with required keys
+  bool _validateMapArgs(dynamic args, List<String> requiredKeys, String functionName) {
+    if (args is! Map) {
+      logger.severe('Invalid args in $functionName: expected Map, got ${args.runtimeType}');
+      return false;
+    }
+    for (final key in requiredKeys) {
+      if (!args.containsKey(key)) {
+        logger.severe('Invalid args in $functionName: missing required key "$key"');
+        return false;
+      }
+    }
+    return true;
+  }
+
   initRuntime(Extension ext) async {
     extension = ext;
     className = extension.package.replaceAll('.', '');
@@ -57,25 +99,21 @@ class ExtensionService {
     runtime.enableHandlePromises();
 
     jsLog(dynamic args) {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          // If it's not valid JSON, just log the string itself
+      final parsedArgs = _parseJsonArgs(args, 'jsLog');
+      if (parsedArgs == null) {
+        // If parsing failed but args is a String, log it directly
+        if (args is String) {
           logger.info(args);
           ExtensionUtils.addLog(
             extension,
             ExtensionLogLevel.info,
             args,
           );
-          return;
         }
+        return;
       }
       
-      if (parsedArgs is! List || parsedArgs.isEmpty) {
-        logger.warning('Invalid args in jsLog: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+      if (!_validateListArgs(parsedArgs, 1, 'jsLog')) {
         return;
       }
 
@@ -88,19 +126,8 @@ class ExtensionService {
     }
 
     jsRequest(dynamic args) async {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsRequest: $e');
-          throw Exception('Invalid arguments for request');
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.length < 2) {
-        logger.severe('Invalid args in jsRequest: expected List with at least 2 elements, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsRequest');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 2, 'jsRequest')) {
         throw Exception('Invalid arguments for request');
       }
 
@@ -171,19 +198,8 @@ class ExtensionService {
     }
 
     jsRegisterSetting(dynamic args) async {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsRegisterSetting: $e');
-          throw Exception('Invalid arguments for registerSetting');
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.isEmpty) {
-        logger.severe('Invalid args in jsRegisterSetting: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsRegisterSetting');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsRegisterSetting')) {
         throw Exception('Invalid arguments for registerSetting');
       }
 
@@ -203,19 +219,8 @@ class ExtensionService {
     }
 
     jsGetMessage(dynamic args) async {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsGetMessage: $e');
-          return null;
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.isEmpty) {
-        logger.severe('Invalid args in jsGetMessage: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsGetMessage');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsGetMessage')) {
         return null;
       }
 
@@ -225,19 +230,8 @@ class ExtensionService {
     }
 
     jsCleanSettings(dynamic args) async {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsCleanSettings: $e');
-          return;
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.isEmpty) {
-        logger.severe('Invalid args in jsCleanSettings: expected List with at least 1 element, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsCleanSettings');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 1, 'jsCleanSettings')) {
         return;
       }
 
@@ -247,19 +241,8 @@ class ExtensionService {
     }
 
     jsQuerySelector(dynamic args) {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsQuerySelector: $e');
-          return '';
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.length < 3) {
-        logger.severe('Invalid args in jsQuerySelector: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsQuerySelector');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsQuerySelector')) {
         return '';
       }
 
@@ -283,19 +266,8 @@ class ExtensionService {
     }
 
     jsQueryXPath(args) {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsQueryXPath: $e');
-          return '';
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.length < 3) {
-        logger.severe('Invalid args in jsQueryXPath: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsQueryXPath');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsQueryXPath')) {
         return '';
       }
 
@@ -327,19 +299,8 @@ class ExtensionService {
     }
 
     jsRemoveSelector(dynamic args) {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsRemoveSelector: $e');
-          return '';
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.length < 2) {
-        logger.severe('Invalid args in jsRemoveSelector: expected List with 2 elements, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsRemoveSelector');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 2, 'jsRemoveSelector')) {
         return '';
       }
 
@@ -353,19 +314,8 @@ class ExtensionService {
     }
 
     jsGetAttributeText(args) {
-      // Handle both List and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsGetAttributeText: $e');
-          return null;
-        }
-      }
-      
-      if (parsedArgs is! List || parsedArgs.length < 3) {
-        logger.severe('Invalid args in jsGetAttributeText: expected List with 3 elements, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsGetAttributeText');
+      if (parsedArgs == null || !_validateListArgs(parsedArgs, 3, 'jsGetAttributeText')) {
         return null;
       }
 
@@ -377,19 +327,8 @@ class ExtensionService {
     }
 
     jsQuerySelectorAll(dynamic args) async {
-      // Handle both Map and String (JSON) inputs
-      dynamic parsedArgs = args;
-      if (args is String) {
-        try {
-          parsedArgs = jsonDecode(args);
-        } catch (e) {
-          logger.severe('Failed to parse args in jsQuerySelectorAll: $e');
-          return jsonEncode([]);
-        }
-      }
-      
-      if (parsedArgs is! Map || !parsedArgs.containsKey("content") || !parsedArgs.containsKey("selector")) {
-        logger.severe('Invalid args in jsQuerySelectorAll: expected Map with "content" and "selector" keys, got ${parsedArgs.runtimeType}');
+      final parsedArgs = _parseJsonArgs(args, 'jsQuerySelectorAll');
+      if (parsedArgs == null || !_validateMapArgs(parsedArgs, ['content', 'selector'], 'jsQuerySelectorAll')) {
         return jsonEncode([]);
       }
 
